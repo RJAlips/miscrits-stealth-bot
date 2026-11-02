@@ -1,0 +1,30 @@
+{
+  "webhook_url": "",
+  "hp_bar_box": [
+    980,
+    115,
+    1185,
+    132
+  ],
+  "waypoints": [],
+  "train_slots": [
+    [
+      909,
+      365
+    ],
+    [
+      908,
+      404
+    ],
+    [
+      906,
+      445
+    ]
+  ],
+  "open_train_pos": null,
+  "heal_pos": null,
+  "cached_slot_coords": {},
+  "rating_filter": "S or Higher",
+  "capture_hp_threshold": 28,
+  "auto_train_enabled": true
+}
