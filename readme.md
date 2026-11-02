@@ -116,7 +116,7 @@ Tune your timings and match thresholds in `config.json`:
 1. Start your **Miscrits: World of Creatures** client and navigate to your target farming area.
 2. Launch the bot:
    ```bash
-   python main.py
+   python bot.py
    ```
 3. Switch focus back to the Miscrits window.
 4. Press the designated start key (default: `F8`).
@@ -127,7 +127,7 @@ Tune your timings and match thresholds in `config.json`:
 To generate a standalone `.exe`:
 
 ```bash
-pyinstaller --noconfirm --onedir --windowed --add-data "assets;assets" main.py
+pyinstaller --noconfirm --onedir --windowed --add-data "assets;assets" bot.py
 ```
 
 ---
