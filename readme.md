@@ -143,4 +143,4 @@ This project is developed strictly for **educational and research purposes** exp
 
 ## 📄 License
 
-Distributed under the [MIT License](LICENSE).
+Distributed under the [MIT License](LICENSE.txt).
