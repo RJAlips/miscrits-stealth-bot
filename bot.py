@@ -39,49 +39,67 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 BUSH_TEMPLATES = ["bush_1", "bush_2", "bush_3", "bush_4", "bush_5"]
 SLOT_TEMPLATES = ["slot_1", "slot_2", "slot_3", "slot_4"]
 
-# ONLY checked inside the Training Window AFTER clicking train_now_btn
+ELEMENTS = ["Water", "Fire", "Nature", "Earth", "Lightning", "Wind"]
+
+# Which element each element is WEAK against (triggers Physical Attack switch)
+WEAK_AGAINST = {
+    "Water": "Nature",
+    "Fire": "Water",
+    "Nature": "Fire",
+    "Earth": "Wind",
+    "Lightning": "Earth",
+    "Wind": "Lightning"
+}
+
+# Which element each element is STRONG against (triggers Elemental Attack boost)
+STRONG_AGAINST = {
+    "Water": "Fire",
+    "Fire": "Nature",
+    "Nature": "Water",
+    "Earth": "Lightning",
+    "Lightning": "Wind",
+    "Wind": "Earth"
+}
+
+ENEMY_ELEMENT_TEMPLATES = {
+    "Water": "enemy_water",
+    "Fire": "enemy_fire",
+    "Nature": "enemy_nature",
+    "Earth": "enemy_earth",
+    "Lightning": "enemy_lightning",
+    "Wind": "enemy_wind"
+}
+
 POST_TRAIN_MODALS = [
-    "new_ability_btn",      # Button on the "New Ability Unlocked!" pop-up
-    "evolve_continue_btn",  # "Continue" / "Okay" button after evolution finishes
-    "evolve_btn",           # Button to trigger/confirm evolution if prompted
-    "train_confirm_btn",    # "Continue" / "Finish" button after stats roll
-    "continue_btn"          # Fallback continue button
+    "new_ability_btn",
+    "evolve_continue_btn",
+    "evolve_btn",
+    "train_confirm_btn",
+    "continue_btn"
 ]
 
 TEMPLATE_NAMES = [
     # Overworld Bushes
-    "bush_1",
-    "bush_2",
-    "bush_3",
-    "bush_4",
-    "bush_5",
+    "bush_1", "bush_2", "bush_3", "bush_4", "bush_5",
+    # 4-Miscrit Elemental & Physical Combat Buttons
+    "m1_elem_atk", "m1_phys_atk",  # Miscrit #1 Elemental & Physical attacks
+    "m2_elem_atk", "m2_phys_atk",  # Miscrit #2 Elemental & Physical attacks
+    "m3_elem_atk", "m3_phys_atk",  # Miscrit #3 Elemental & Physical attacks
+    "m4_elem_atk", "m4_phys_atk",  # Miscrit #4 Elemental & Physical attacks
+    # Enemy Element Icons (Snip the element badge next to enemy name/HP bar)
+    "enemy_water", "enemy_fire", "enemy_nature",
+    "enemy_earth", "enemy_lightning", "enemy_wind",
+    # Fallback & Capture Combat Buttons
+    "battle_attack", "chip_attack", "capture_btn", "target_miscrit",
     # Auto-Training, New Abilities & Evolution Templates
-    "open_train_menu_btn",  # Top HUD button that opens the Training window
-    "ready_to_train",       # Glowing "Ready to Train" icon on HUD or post-battle screen
-    "slot_1",               # (Optional if using F9) 1st Miscrit slot inside Training window
-    "slot_2",               # (Optional if using F9) 2nd Miscrit slot inside Training window
-    "slot_3",               # (Optional if using F9) 3rd Miscrit slot inside Training window
-    "slot_4",               # (Optional if using F9) 4th Miscrit slot inside Training window
-    "train_now_btn",        # The "Train" button inside the Training window
-    "train_confirm_btn",    # "Continue" / "Finish" button after stat bars finish rolling
-    "new_ability_btn",      # "Continue" / "Okay" button when a New Ability is added
-    "evolve_btn",           # Button during Evolution prompt
-    "evolve_continue_btn",  # "Continue" button after Evolution completes
-    "close_train_btn",      # The "X" button at the top-right of the Training window
-    # Combat & Capture Templates
-    "battle_attack",
-    "chip_attack",
-    "capture_btn",
-    "target_miscrit",
-    "keep_btn",
-    "release_btn",
-    "confirm_release",
-    "rating_s_plus",
-    "rating_s",
-    "rating_a_plus",
-    "continue_btn",
-    "level_up",
-    "heal_btn"
+    "open_train_menu_btn", "ready_to_train",
+    "slot_1", "slot_2", "slot_3", "slot_4",
+    "train_now_btn", "train_confirm_btn", "new_ability_btn",
+    "evolve_btn", "evolve_continue_btn", "close_train_btn",
+    # Post-Battle & Rating Filter Templates
+    "keep_btn", "release_btn", "confirm_release",
+    "rating_s_plus", "rating_s", "rating_a_plus",
+    "continue_btn", "level_up", "heal_btn"
 ]
 
 
@@ -218,6 +236,9 @@ class MiscritsStealthBot:
         self.webhook_url = ""
         self.log = log_callback
 
+        # Element assigned to each of your 4 party Miscrits
+        self.team_elements = ["Fire", "Water", "Nature", "Earth"]
+
         with mss.mss() as sct:
             mon = sct.monitors[1]
             self.monitor = {
@@ -235,10 +256,9 @@ class MiscritsStealthBot:
         self.bush_index = 0
 
         self.train_slots = []
-        # Remembers the last seen coordinate of slot_1..slot_4 even if a Miscrit faints/turns dark!
         self.cached_slot_coords = {}
-        self.open_train_pos = None  # F10: Overworld Train Button
-        self.heal_pos = None        # F11: Overworld Heal Button
+        self.open_train_pos = None
+        self.heal_pos = None
 
         self.battles_since_heal = 0
         self.battles_since_train_check = 0
@@ -271,6 +291,9 @@ class MiscritsStealthBot:
                     self.rating_filter = data.get("rating_filter", "S or Higher")
                     self.capture_hp_threshold = data.get("capture_hp_threshold", 28)
                     self.auto_train_enabled = data.get("auto_train_enabled", True)
+                    saved_elems = data.get("team_elements", None)
+                    if saved_elems and len(saved_elems) == 4:
+                        self.team_elements = saved_elems
             except Exception as e:
                 self.log(f"Config load warning: {e}")
 
@@ -285,7 +308,8 @@ class MiscritsStealthBot:
             "cached_slot_coords": {k: list(v) for k, v in self.cached_slot_coords.items()},
             "rating_filter": self.rating_filter,
             "capture_hp_threshold": self.capture_hp_threshold,
-            "auto_train_enabled": self.auto_train_enabled
+            "auto_train_enabled": self.auto_train_enabled,
+            "team_elements": self.team_elements
         }
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -405,21 +429,89 @@ class MiscritsStealthBot:
             return (cx, cy, max_val)
         return None
 
+    def detect_enemy_element(self, gray_frame):
+        """Scans the battle screen for the enemy's elemental badge icon."""
+        best_elem = None
+        best_score = 0.78
+        for elem_name, tmpl_key in ENEMY_ELEMENT_TEMPLATES.items():
+            if tmpl_key in self.templates:
+                tmpl = self.templates[tmpl_key]
+                res = cv2.matchTemplate(gray_frame, tmpl, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(res)
+                if max_val >= best_score:
+                    best_score = max_val
+                    best_elem = elem_name
+        return best_elem
+
+    def select_adaptive_combat_move(self, gray_frame):
+        """
+        Detects which of your 4 Miscrits is currently fighting, checks the enemy's element,
+        and picks Physical if your Miscrit is weak to the enemy, or Elemental if strong/neutral!
+        Returns: (click_x, click_y, log_description) or None if not in battle.
+        """
+        enemy_elem = self.detect_enemy_element(gray_frame)
+
+        # Check Miscrit #1 through #4 in order
+        for idx in range(4):
+            slot_num = idx + 1
+            my_elem = self.team_elements[idx]
+            elem_btn = self.find_ui(gray_frame, f"m{slot_num}_elem_atk", threshold=0.79)
+            phys_btn = self.find_ui(gray_frame, f"m{slot_num}_phys_atk", threshold=0.79)
+
+            if elem_btn or phys_btn:
+                is_weak = (enemy_elem is not None and WEAK_AGAINST.get(my_elem) == enemy_elem)
+                is_strong = (enemy_elem is not None and STRONG_AGAINST.get(my_elem) == enemy_elem)
+
+                if is_weak:
+                    if phys_btn:
+                        return (
+                            phys_btn[0], phys_btn[1],
+                            f"Miscrit #{slot_num} ({my_elem}) is WEAK vs {enemy_elem} -> Switched to PHYSICAL attack!"
+                        )
+                    else:
+                        return (
+                            elem_btn[0], elem_btn[1],
+                            f"Miscrit #{slot_num} ({my_elem}) weak vs {enemy_elem}, but m{slot_num}_phys_atk not snipped -> Using Elemental."
+                        )
+                elif is_strong:
+                    if elem_btn:
+                        return (
+                            elem_btn[0], elem_btn[1],
+                            f"Miscrit #{slot_num} ({my_elem}) is STRONG vs {enemy_elem} -> Using ELEMENTAL attack!"
+                        )
+                    else:
+                        return (
+                            phys_btn[0], phys_btn[1],
+                            f"Miscrit #{slot_num} ({my_elem}) strong vs {enemy_elem} -> Using Physical fallback."
+                        )
+                else:
+                    # Neutral or enemy element not snipped: prefer strong Elemental move, fallback to Physical
+                    if elem_btn:
+                        vs_txt = f"vs {enemy_elem}" if enemy_elem else "(Neutral)"
+                        return (
+                            elem_btn[0], elem_btn[1],
+                            f"Miscrit #{slot_num} ({my_elem}) {vs_txt} -> Using Elemental attack."
+                        )
+                    else:
+                        return (
+                            phys_btn[0], phys_btn[1],
+                            f"Miscrit #{slot_num} ({my_elem}) -> Using Physical attack."
+                        )
+
+        # Fallback to single default battle_attack if m1..m4 aren't snipped yet
+        default_atk = self.find_ui(gray_frame, "battle_attack", threshold=0.80)
+        if default_atk:
+            return (default_atk[0], default_atk[1], "Combat -> Using default battle_attack.")
+
+        return None
+
     def find_slot_dead_or_alive(self, gray_frame, slot_name):
-        """
-        Finds a Miscrit slot inside the Training Window even if the Miscrit died/fainted!
-        1. Checks normal grayscale match and caches the coordinate.
-        2. Checks Canny Edge / outline shape match (ignores dark/grayed-out dead tint).
-        3. Falls back to the cached coordinate from when the Miscrit was alive.
-        """
-        # 1. Try normal match (lowered to 0.65 in case portrait is slightly darkened)
         normal_match = self.find_ui(gray_frame, slot_name, threshold=0.65)
         if normal_match:
             self.cached_slot_coords[slot_name] = (normal_match[0], normal_match[1])
             self.save_config()
             return (normal_match[0], normal_match[1], "Alive/Matched")
 
-        # 2. Try Canny Edge / Shape matching (ignores brightness/color changes when dead)
         if slot_name in self.templates:
             tmpl = self.templates[slot_name]
             h, w = tmpl.shape
@@ -435,7 +527,6 @@ class MiscritsStealthBot:
                 self.save_config()
                 return (cx, cy, f"Dead/Edge-Match ({round(max_val, 2)})")
 
-        # 3. Use remembered coordinate from when the Miscrit was alive
         if slot_name in self.cached_slot_coords:
             cx, cy = self.cached_slot_coords[slot_name]
             jx, jy = HumanInputEngine.gaussian_point_in_box(cx - 8, cy - 8, 16, 16)
@@ -444,9 +535,7 @@ class MiscritsStealthBot:
         return None
 
     def trigger_overworld_heal(self, sct, reason=""):
-        """Revives dead/fainted Miscrits in the overworld before training or after battles."""
         _, gray = self.grab_frames(sct)
-        # Don't click overworld heal if the Training window is already covering the screen
         if self.find_ui(gray, "close_train_btn", threshold=0.78):
             return False
 
@@ -468,9 +557,6 @@ class MiscritsStealthBot:
         return False
 
     def clear_post_train_modals(self, sct, label_str):
-        """
-        Runs ONLY inside the Training Window right after clicking train_now_btn.
-        """
         deadline = time.time() + 9.0
         click_counts = {name: 0 for name in POST_TRAIN_MODALS}
         any_modal_clicked = False
@@ -516,7 +602,6 @@ class MiscritsStealthBot:
             time.sleep(0.4)
 
     def train_single_selected_miscrit(self, sct, label_str):
-        """Checks if the selected Miscrit slot has an active Train button and levels it up."""
         if "train_now_btn" not in self.templates:
             self.log("Cannot train: You haven't snipped 'train_now_btn' yet!")
             return False
@@ -542,8 +627,6 @@ class MiscritsStealthBot:
         return leveled_any
 
     def open_training_window_reliably(self, sct):
-        """Pre-heals dead Miscrits first, then opens the Training window and verifies it opened."""
-        # Pre-heal in overworld so dead/fainted Miscrits are revived to full HP before opening Training!
         self.trigger_overworld_heal(sct, reason="Pre-Train Revive")
 
         for attempt in range(2):
@@ -586,7 +669,6 @@ class MiscritsStealthBot:
         return False
 
     def execute_4_slot_training_sequence(self, sct, manual_test=False):
-        """Revives team, opens Training window, clicks all 4 slots (even if dead/grayed), trains, and closes."""
         self.log("Checking party for Miscrits ready to level up...")
 
         if not self.open_training_window_reliably(sct):
@@ -599,7 +681,6 @@ class MiscritsStealthBot:
         trained_count = 0
         snipped_slots = [s for s in SLOT_TEMPLATES if s in self.templates]
 
-        # Priority 1 — Use F9 Recorded Coordinates for all 4 Slots (100% immune to dead/grayed portraits!)
         if len(self.train_slots) > 0:
             for idx, (sx, sy) in enumerate(self.train_slots):
                 if (not self.running and not manual_test) or keyboard.is_pressed("F8"):
@@ -612,7 +693,6 @@ class MiscritsStealthBot:
                 if self.train_single_selected_miscrit(sct, f"Slot #{idx + 1}"):
                     trained_count += 1
 
-        # Priority 2 — Use Snipped slot_1..4 with Dead/Grayed Edge & Coordinate Memory Fallback
         elif len(snipped_slots) > 0:
             for slot_name in snipped_slots:
                 if (not self.running and not manual_test) or keyboard.is_pressed("F8"):
@@ -626,14 +706,13 @@ class MiscritsStealthBot:
                     if self.train_single_selected_miscrit(sct, slot_name):
                         trained_count += 1
                 else:
-                    self.log(f"Could not see {slot_name} (Tip: Press F9 on all 4 slots so it works even when dead!).")
+                    self.log(f"Could not see {slot_name} (Tip: Press F9 on all 4 slots!).")
 
         else:
             self.log("No 4-Slot positions set! Press F9 on each of the 4 Miscrits in Training window.")
             if self.train_single_selected_miscrit(sct, "Default Slot #1"):
                 trained_count += 1
 
-        # Close Training Window and wait for it to disappear before doing anything else
         _, gray_end = self.grab_frames(sct)
         close_btn = self.find_ui(gray_end, "close_train_btn", threshold=0.76)
         if close_btn:
@@ -685,10 +764,7 @@ class MiscritsStealthBot:
         return True, detected
 
     def run_loop(self):
-        snipped_bushes = self.get_snipped_bushes()
-        f10_status = "Saved" if self.open_train_pos else "Not Set"
-        f11_status = "Saved" if self.heal_pos else "Not Set"
-        self.log(f"Bot active! F9 Slots: {len(self.train_slots)}/4 | F10 Train: {f10_status} | F11 Heal: {f11_status}")
+        self.log(f"Bot active! Team Elements: {self.team_elements}")
         next_afk_time = time.time() + random.uniform(900, 1500)
 
         with mss.mss() as sct:
@@ -776,9 +852,9 @@ class MiscritsStealthBot:
                 self.last_modal_name = None
                 self.same_modal_count = 0
 
-                # Priority 3: Active Combat (Target Check, HP Reader, Chip & Capture)
-                atk_btn = self.find_ui(gray, "battle_attack", threshold=0.81)
-                if atk_btn:
+                # Priority 3: Adaptive 4-Miscrit Combat (Elemental vs Physical + Rare Capture)
+                combat_move = self.select_adaptive_combat_move(gray)
+                if combat_move:
                     if self.mode == "RARE_HUNT":
                         is_target = self.find_ui(gray, "target_miscrit", threshold=0.84)
                         target_valid = (is_target is not None) or ("target_miscrit" not in self.templates)
@@ -808,12 +884,12 @@ class MiscritsStealthBot:
                                 HumanInputEngine.sleep_human(2.8, 0.2)
                                 continue
 
-                    self.log("Combat -> Using primary heavy attack.")
-                    HumanInputEngine.bezier_move_and_click(atk_btn[0], atk_btn[1])
+                    self.log(combat_move[2])
+                    HumanInputEngine.bezier_move_and_click(combat_move[0], combat_move[1])
                     HumanInputEngine.sleep_human(2.9, 0.2)
                     continue
 
-                # Priority 4: Overworld Team Healing (every 2 battles so dead Miscrits revive immediately!)
+                # Priority 4: Overworld Team Healing (every 2 battles)
                 if self.battles_since_heal >= 2:
                     if self.trigger_overworld_heal(sct, reason="Post-Battle Revive"):
                         continue
@@ -831,7 +907,7 @@ class MiscritsStealthBot:
                         self.execute_4_slot_training_sequence(sct)
                         continue
 
-                # Priority 6: Overworld Multi-Bush Rotation (bush_1 -> bush_2 -> bush_3...)
+                # Priority 6: Overworld Multi-Bush Rotation
                 snipped_bushes = self.get_snipped_bushes()
                 if snipped_bushes:
                     clicked_bush = False
@@ -864,8 +940,8 @@ class MiscritsStealthBot:
 class UltimateSuiteGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Miscrits Stealth Suite v3.8 (Dead Miscrit Revive & Train Fix)")
-        self.geometry("540x780")
+        self.title("Miscrits Stealth Suite v4.0 (4-Miscrit Elemental & Physical AI)")
+        self.geometry("560x840")
         ctk.set_appearance_mode("dark")
 
         self.bot = MiscritsStealthBot(self.log_message)
@@ -879,34 +955,53 @@ class UltimateSuiteGUI(ctk.CTk):
 
         # --- Section 1: Mode & Stat Rating Filter ---
         top_frame = ctk.CTkFrame(self)
-        top_frame.pack(fill="x", padx=14, pady=(10, 5))
+        top_frame.pack(fill="x", padx=14, pady=(8, 4))
 
-        ctk.CTkLabel(top_frame, text="Mode:", font=("Arial", 13, "bold")).grid(row=0, column=0, padx=8, pady=6)
+        ctk.CTkLabel(top_frame, text="Mode:", font=("Arial", 13, "bold")).grid(row=0, column=0, padx=8, pady=5)
         self.mode_var = ctk.StringVar(value=self.bot.mode)
         ctk.CTkSegmentedButton(
             top_frame, values=["XP_GRIND", "RARE_HUNT"],
             variable=self.mode_var, command=self.change_mode
-        ).grid(row=0, column=1, padx=8, pady=6)
+        ).grid(row=0, column=1, padx=8, pady=5)
 
-        ctk.CTkLabel(top_frame, text="Keep Rating:", font=("Arial", 13, "bold")).grid(row=1, column=0, padx=8, pady=6)
+        ctk.CTkLabel(top_frame, text="Keep Rating:", font=("Arial", 13, "bold")).grid(row=1, column=0, padx=8, pady=5)
         self.rating_var = ctk.StringVar(value=self.bot.rating_filter)
         ctk.CTkOptionMenu(
             top_frame, values=["Keep All", "A+ or Higher", "S or Higher", "S+ Only"],
             variable=self.rating_var, command=self.change_rating
-        ).grid(row=1, column=1, padx=8, pady=6, sticky="ew")
+        ).grid(row=1, column=1, padx=8, pady=5, sticky="ew")
 
-        # --- Section 2: Built-In Screen Snipping Tool ---
+        # --- Section 2: 4-Miscrit Element Selector ---
+        elem_frame = ctk.CTkFrame(self)
+        elem_frame.pack(fill="x", padx=14, pady=4)
+        ctk.CTkLabel(
+            elem_frame, text="Your 4 Miscrits' Elements (Auto-switches to Physical if Weak):",
+            font=("Arial", 12, "bold")
+        ).grid(row=0, column=0, columnspan=4, padx=8, pady=(5, 2), sticky="w")
+
+        self.elem_vars = []
+        for i in range(4):
+            var = ctk.StringVar(value=self.bot.team_elements[i])
+            self.elem_vars.append(var)
+            ctk.CTkLabel(elem_frame, text=f"M{i+1}:", font=("Arial", 11, "bold")).grid(row=1, column=i, padx=4, pady=(2, 0))
+            menu = ctk.CTkOptionMenu(
+                elem_frame, values=ELEMENTS, variable=var, width=115,
+                command=lambda val, idx=i: self.update_team_element(idx, val)
+            )
+            menu.grid(row=2, column=i, padx=6, pady=(0, 6))
+
+        # --- Section 3: Built-In Screen Snipping Tool ---
         snip_frame = ctk.CTkFrame(self)
-        snip_frame.pack(fill="x", padx=14, pady=5)
+        snip_frame.pack(fill="x", padx=14, pady=4)
 
         ctk.CTkLabel(
-            snip_frame, text="Built-in Snipper (Snip or Delete Bad Templates):",
-            font=("Arial", 13, "bold")
-        ).grid(row=0, column=0, columnspan=3, padx=8, pady=(6, 2), sticky="w")
+            snip_frame, text="Built-in Snipper (Snip m1..m4_elem_atk, m1..m4_phys_atk & enemy_*):",
+            font=("Arial", 12, "bold")
+        ).grid(row=0, column=0, columnspan=3, padx=8, pady=(5, 2), sticky="w")
 
         self.snip_target_var = ctk.StringVar(value=TEMPLATE_NAMES[0])
         ctk.CTkOptionMenu(
-            snip_frame, values=TEMPLATE_NAMES, variable=self.snip_target_var, width=190
+            snip_frame, values=TEMPLATE_NAMES, variable=self.snip_target_var, width=200
         ).grid(row=1, column=0, padx=6, pady=6)
 
         ctk.CTkButton(
@@ -917,29 +1012,29 @@ class UltimateSuiteGUI(ctk.CTk):
             snip_frame, text="Delete Selected", fg_color="#802020", width=120, command=self.delete_selected_template
         ).grid(row=1, column=2, padx=6, pady=6)
 
-        # --- Section 3: Discord Webhook Settings ---
+        # --- Section 4: Discord Webhook Settings ---
         wh_frame = ctk.CTkFrame(self)
-        wh_frame.pack(fill="x", padx=14, pady=5)
+        wh_frame.pack(fill="x", padx=14, pady=4)
 
-        ctk.CTkLabel(wh_frame, text="Discord Webhook URL:", font=("Arial", 13, "bold")).grid(
-            row=0, column=0, columnspan=2, padx=8, pady=(6, 2), sticky="w"
+        ctk.CTkLabel(wh_frame, text="Discord Webhook URL:", font=("Arial", 12, "bold")).grid(
+            row=0, column=0, columnspan=2, padx=8, pady=(4, 2), sticky="w"
         )
-        self.wh_entry = ctk.CTkEntry(wh_frame, width=340, placeholder_text="https://discord.com/api/webhooks/...")
+        self.wh_entry = ctk.CTkEntry(wh_frame, width=350, placeholder_text="https://discord.com/api/webhooks/...")
         self.wh_entry.insert(0, self.bot.webhook_url)
-        self.wh_entry.grid(row=1, column=0, padx=8, pady=6)
+        self.wh_entry.grid(row=1, column=0, padx=8, pady=5)
 
         ctk.CTkButton(
             wh_frame, text="Save & Test", width=110, command=self.save_and_test_webhook
-        ).grid(row=1, column=1, padx=8, pady=6)
+        ).grid(row=1, column=1, padx=8, pady=5)
 
-        # --- Section 4: Auto-Training & Stealth Controls ---
+        # --- Section 5: Auto-Training & Stealth Controls ---
         ctrl_frame = ctk.CTkFrame(self)
-        ctrl_frame.pack(fill="x", padx=14, pady=5)
+        ctrl_frame.pack(fill="x", padx=14, pady=4)
 
         self.hp_label = ctk.CTkLabel(
             ctrl_frame, text=f"Capture Enemy Below HP: {self.bot.capture_hp_threshold}%"
         )
-        self.hp_label.pack(pady=(6, 2))
+        self.hp_label.pack(pady=(4, 1))
         self.hp_slider = ctk.CTkSlider(
             ctrl_frame, from_=5, to=80, number_of_steps=75, command=self.update_hp
         )
@@ -947,18 +1042,18 @@ class UltimateSuiteGUI(ctk.CTk):
         self.hp_slider.pack(pady=2)
 
         sub_ctrl = ctk.CTkFrame(ctrl_frame, fg_color="transparent")
-        sub_ctrl.pack(pady=4)
+        sub_ctrl.pack(pady=3)
 
         self.train_switch = ctk.CTkSwitch(
             sub_ctrl, text="Auto-Train All 4 Miscrits", command=self.toggle_auto_train
         )
         if self.bot.auto_train_enabled:
             self.train_switch.select()
-        self.train_switch.grid(row=0, column=0, padx=8, pady=4)
+        self.train_switch.grid(row=0, column=0, padx=8, pady=2)
 
         self.afk_switch = ctk.CTkSwitch(sub_ctrl, text="Human AFK Breaks", command=self.toggle_afk)
         self.afk_switch.select()
-        self.afk_switch.grid(row=0, column=1, padx=8, pady=4)
+        self.afk_switch.grid(row=0, column=1, padx=8, pady=2)
 
         btn_ctrl = ctk.CTkFrame(ctrl_frame, fg_color="transparent")
         btn_ctrl.pack(pady=4)
@@ -975,21 +1070,22 @@ class UltimateSuiteGUI(ctk.CTk):
             btn_ctrl, text="Test Auto-Train Now", fg_color="#7b2cbf", width=150, command=self.test_auto_train
         ).grid(row=0, column=2, padx=5)
 
-        # --- Section 5: Start / Stop & Live Telemetry Log ---
+        # --- Section 6: Start / Stop & Live Telemetry Log ---
         self.start_btn = ctk.CTkButton(
             self, text="Start Stealth Suite", fg_color="#1f7a1f",
-            height=40, font=("Arial", 14, "bold"), command=self.toggle_bot
+            height=38, font=("Arial", 14, "bold"), command=self.toggle_bot
         )
-        self.start_btn.pack(pady=8, padx=14, fill="x")
+        self.start_btn.pack(pady=6, padx=14, fill="x")
 
-        self.log_box = ctk.CTkTextbox(self, width=510, height=205, font=("Consolas", 11))
-        self.log_box.pack(padx=14, pady=(2, 10))
-        f10_txt = "Set" if self.bot.open_train_pos else "Press F10"
-        f11_txt = "Set" if self.bot.heal_pos else "Press F11"
-        self.log_message(
-            f"Ready! F9 Slots: {len(self.bot.train_slots)}/4 | F10 Train: {f10_txt} | F11 Heal: {f11_txt}"
-        )
+        self.log_box = ctk.CTkTextbox(self, width=530, height=185, font=("Consolas", 11))
+        self.log_box.pack(padx=14, pady=(2, 8))
+        self.log_message(f"Team Elements loaded: M1={self.bot.team_elements[0]}, M2={self.bot.team_elements[1]}, M3={self.bot.team_elements[2]}, M4={self.bot.team_elements[3]}")
         self.log_message("Hotkeys: [F9] 4 Slots | [F10] HUD Train | [F11] HUD Heal | [F8] Stop")
+
+    def update_team_element(self, idx, val):
+        self.bot.team_elements[idx] = val
+        self.bot.save_config()
+        self.log_message(f"Miscrit #{idx + 1} element set to: {val} (Weak vs {WEAK_AGAINST[val]}, Strong vs {STRONG_AGAINST[val]})")
 
     def delete_selected_template(self):
         target = self.snip_target_var.get()
